@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classic Pong Game with AI, Levels, and Power-ups</title>
+    <style>
+        /* Basic CSS Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #1a1a2e; /* Deep blue background */
+            font-family: 'Courier New', Courier, monospace;
+            color: #e0e0e0;
+            text-align: center;
+            padding: 20px;
+            transition: background-color 0.5s ease;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            color: #fca311; /* Bright orange for title */
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px #fca311, 0 0 20px #fca311;
+        }
+        
+        #gameCanvas {
+            background-color: #0f0f1a; /* Darker blue for canvas */
+            border-radius: 15px;
+            box-shadow: 0 0 30px rgba(252, 163, 17, 0.5); /* Glowing effect */
+            cursor: none; /* Hide cursor over canvas */
+            transition: background-color 0.5s ease;
+        }
+
+        .controls {
+            margin-top: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .control-row {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .controls input {
+            padding: 10px;
+            border-radius: 8px;
+            border: 2px solid #fca311;
+            background-color: #0f0f1a;
+            color: #e0e0e0;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1rem;
+            min-width: 220px;
+        }
+
+        .controls button {
+            padding: 10px 20px;
+            font-size: 1rem;
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #fca311;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(252, 163, 17, 0.5);
+            transition: all 0.2s ease-in-out;
+        }
+        .controls button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(252, 163, 17, 0.8);
+        }
+
+        /* Modal Styles */
+        .modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #14213d;
+            padding: 30px;
+            border-radius: 15px;
+            z-index: 1000;
+            display: none; /* Hidden by default */
+            width: 80%;
+            max-width: 500px;
+            box-shadow: 0 0 40px rgba(252, 163, 17, 0.6);
+            border: 2px solid #fca311;
+        }
+        .modal p {
+            font-size: 1.2rem;
+            line-height: 1.6;
+        }
+        .modal button {
+            margin-top: 20px;
+            padding: 8px 16px;
+            background-color: #e63946;
+            color: #e0e0e0;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            display: none; /* Hidden by default */
+            z-index: 999;
+        }
+    </style>
+</head>
+<body>
+
+    <h1 id="gameTitle">Retro Pong</h1>
+    <canvas id="gameCanvas"></canvas>
+    <div class="controls">
+        <div class="control-row">
+             <button id="gameModeButton">🎮 Player vs AI</button>
+            <button id="pepTalkButton">✨ Get Pep Talk</button>
+        </div>
+        <div class="control-row" id="aiControls">
+            <input type="text" id="themeInput" placeholder="Enter a theme (e.g., cyberpunk)">
+            <button id="themeButton">✨ Customize Theme</button>
+            <input type="text" id="aiPersonalityInput" placeholder="Enter AI personality (e.g., sleepy)">
+            <button id="aiPersonalityButton">✨ Set AI Personality</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalOverlay"></div>
+    <div class="modal" id="modal">
+        <p id="modalText">Loading...</p>
+        <button id="closeModal">Close</button>
+    </div>
+
+
+    <script>
+        // --- Canvas Setup ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- Game State & Colors ---
+        let ball, player, computer;
+        let obstacles = [];
+        let powerUps = [];
+        let level = 1;
+        let gameMode = 'vsAI'; // 'vsAI' or 'vsPlayer'
+        let upArrowPressed = false;
+        let downArrowPressed = false;
+
+
+        let colors = {
+            canvasBg: '#0f0f1a',
+            net: '#e0e0e0',
+            obstacle: '#8d99ae',
+            powerUp: '#2a9d8f'
+        };
+
+        // Set initial canvas size and make it responsive
+        function resizeCanvas() {
+            const aspectRatio = 16 / 9;
+            let newWidth = window.innerWidth * 0.9;
+            let newHeight = newWidth / aspectRatio;
+
+            if (newHeight > window.innerHeight * 0.6) {
+                newHeight = window.innerHeight * 0.6;
+                newWidth = newHeight * aspectRatio;
+            }
+
+            canvas.width = newWidth;
+            canvas.height = newHeight;
+        }
+
+        // --- Game Objects ---
+        function initializeGameObjects() {
+            // Ball object
+            ball = {
+                x: canvas.width / 2,
+                y: canvas.height / 2,
+                radius: canvas.width * 0.015,
+                velocityX: 5,
+                velocityY: 5,
+                speed: 7,
+                color: '#fca311'
+            };
+
+            // Player paddle
+            player = {
+                x: 10,
+                y: (canvas.height - 100) / 2,
+                width: canvas.width * 0.02,
+                height: canvas.height * 0.2,
+                score: 0,
+                color: '#14213d'
+            };
+
+            // Computer/Player 2 paddle
+            computer = {
+                x: canvas.width - (canvas.width * 0.02) - 10,
+                y: (canvas.height - 100) / 2,
+                width: canvas.width * 0.02,
+                height: canvas.height * 0.2,
+                score: 0,
+                color: '#e63946',
+                // AI personality traits
+                name: 'The Standard Bot',
+                level: 0.1, // How fast it tracks the ball
+                errorMargin: 0, // How much random error to introduce
+                speed: 8 // for player 2
+            };
+        }
+        
+        // --- Level Generation ---
+        function generateLevel() {
+            level++;
+            obstacles = [];
+            powerUps = [];
+
+            // Add obstacles
+            const numObstacles = Math.floor(Math.random() * (level / 2)) + 1;
+            for (let i = 0; i < numObstacles; i++) {
+                obstacles.push({
+                    x: Math.random() * (canvas.width / 2) + (canvas.width / 4),
+                    y: Math.random() * canvas.height,
+                    width: 10,
+                    height: Math.random() * 100 + 50
+                });
+            }
+
+            // Add power-ups
+            if (Math.random() < 0.5) { // 50% chance of a power-up
+                powerUps.push({
+                    x: Math.random() * (canvas.width / 2) + (canvas.width / 4),
+                    y: Math.random() * canvas.height,
+                    radius: 15,
+                    type: Math.random() < 0.5 ? 'grow' : 'slow'
+                });
+            }
+        }
+
+
+        // --- Drawing Functions ---
+        function drawRect(x, y, w, h, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, w, h);
+        }
+
+        function drawArc(x, y, r, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2, false);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawNet() {
+            for (let i = 0; i <= canvas.height; i += 15) {
+                drawRect(canvas.width / 2 - 1, i, 2, 10, colors.net);
+            }
+        }
+
+        function drawText(text, x, y) {
+            ctx.fillStyle = '#e0e0e0';
+            ctx.font = `${canvas.width * 0.05}px 'Courier New', Courier, monospace`;
+            ctx.fillText(text, x, y);
+        }
+
+        // --- Game Logic ---
+        canvas.addEventListener('mousemove', movePaddle);
+
+        function movePaddle(evt) {
+            let rect = canvas.getBoundingClientRect();
+            player.y = evt.clientY - rect.top - player.height / 2;
+        }
+
+        function collision(b, p) {
+            // This is a generic AABB check, good for paddles and powerups
+            const pTop = p.y;
+            const pBottom = p.y + (p.height || p.radius * 2);
+            const pLeft = p.x;
+            const pRight = p.x + (p.width || p.radius * 2);
+
+            const bTop = b.y - b.radius;
+            const bBottom = b.y + b.radius;
+            const bLeft = b.x - b.radius;
+            const bRight = b.x + b.radius;
+
+            return pLeft < bRight && pTop < bBottom && pRight > bLeft && pBottom > bTop;
+        }
+
+        function resetGame() {
+            player.score = 0;
+            computer.score = 0;
+            level = 1;
+            obstacles = [];
+            powerUps = [];
+            resetBall();
+        }
+
+        function resetBall(newLevel = false) {
+            if (newLevel) {
+                generateLevel();
+            }
+            ball.x = canvas.width / 2;
+            ball.y = canvas.height / 2;
+            ball.velocityX = -ball.velocityX;
+            ball.speed = 7;
+        }
+
+        function update() {
+            ball.x += ball.velocityX;
+            ball.y += ball.velocityY;
+
+            // Opponent Logic
+            if (gameMode === 'vsAI') {
+                // Computer AI with personality
+                const targetY = ball.y + (Math.random() * computer.errorMargin - computer.errorMargin / 2);
+                computer.y += (targetY - (computer.y + computer.height / 2)) * computer.level;
+            } else {
+                // Player 2 controls
+                if (upArrowPressed && computer.y > 0) {
+                    computer.y -= computer.speed;
+                } else if (downArrowPressed && computer.y < canvas.height - computer.height) {
+                    computer.y += computer.speed;
+                }
+            }
+
+
+            if (ball.y + ball.radius > canvas.height || ball.y - ball.radius < 0) {
+                ball.velocityY = -ball.velocityY;
+            }
+            
+            // Obstacle Physics
+            obstacles.forEach(obstacle => {
+                let dx = ball.x - (obstacle.x + obstacle.width / 2);
+                let dy = ball.y - (obstacle.y + obstacle.height / 2);
+                let combinedHalfWidths = ball.radius + obstacle.width / 2;
+                let combinedHalfHeights = ball.radius + obstacle.height / 2;
+
+                if (Math.abs(dx) < combinedHalfWidths && Math.abs(dy) < combinedHalfHeights) {
+                    let overlapX = combinedHalfWidths - Math.abs(dx);
+                    let overlapY = combinedHalfHeights - Math.abs(dy);
+
+                    if (overlapX >= overlapY) {
+                        ball.velocityY = -ball.velocityY;
+                        ball.y += (dy > 0 ? overlapY : -overlapY);
+                    } else {
+                        ball.velocityX = -ball.velocityX;
+                        ball.x += (dx > 0 ? overlapX : -overlapX);
+                    }
+                }
+            });
+
+            // Power-up collision
+            powerUps.forEach((powerUp, index) => {
+                if (collision(ball, powerUp)) {
+                    if (powerUp.type === 'grow') {
+                        player.height += 50;
+                    } else if (powerUp.type === 'slow') {
+                        ball.speed = Math.max(3, ball.speed - 2);
+                    }
+                    powerUps.splice(index, 1);
+                }
+            });
+
+
+            let user = (ball.x < canvas.width / 2) ? player : computer;
+
+            if (collision(ball, user)) {
+                let collidePoint = (ball.y - (user.y + user.height / 2));
+                collidePoint = collidePoint / (user.height / 2);
+                let angleRad = (Math.PI / 4) * collidePoint;
+                let direction = (ball.x < canvas.width / 2) ? 1 : -1;
+                ball.velocityX = direction * ball.speed * Math.cos(angleRad);
+                ball.velocityY = ball.speed * Math.sin(angleRad);
+                ball.speed += 0.5;
+            }
+
+            if (ball.x - ball.radius < 0) {
+                computer.score++;
+                resetBall(true);
+            } else if (ball.x + ball.radius > canvas.width) {
+                player.score++;
+                resetBall(true);
+            }
+        }
+
+        function render() {
+            drawRect(0, 0, canvas.width, canvas.height, colors.canvasBg);
+            drawText(player.score, canvas.width / 4, canvas.height / 5);
+            drawText(computer.score, 3 * canvas.width / 4, canvas.height / 5);
+            drawNet();
+            drawRect(player.x, player.y, player.width, player.height, player.color);
+            drawRect(computer.x, computer.y, computer.width, computer.height, computer.color);
+            
+            obstacles.forEach(obstacle => drawRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height, colors.obstacle));
+            powerUps.forEach(powerUp => drawArc(powerUp.x, powerUp.y, powerUp.radius, colors.powerUp));
+            
+            drawArc(ball.x, ball.y, ball.radius, ball.color);
+        }
+
+        let isGamePaused = false;
+        function gameLoop() {
+            if (!isGamePaused) {
+                update();
+            }
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Event Listeners & Controls ---
+        
+        // Player 2 Keyboard Controls
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp') upArrowPressed = true;
+            if (e.key === 'ArrowDown') downArrowPressed = true;
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowUp') upArrowPressed = false;
+            if (e.key === 'ArrowDown') downArrowPressed = false;
+        });
+
+        // Game Mode Switching
+        const gameModeButton = document.getElementById('gameModeButton');
+        const aiControls = document.getElementById('aiControls');
+        gameModeButton.addEventListener('click', () => {
+            if (gameMode === 'vsAI') {
+                gameMode = 'vsPlayer';
+                gameModeButton.textContent = '🎮 Player vs Player';
+                aiControls.style.display = 'none';
+            } else {
+                gameMode = 'vsAI';
+                gameModeButton.textContent = '🎮 Player vs AI';
+                aiControls.style.display = 'flex';
+            }
+            resetGame();
+        });
+
+
+        // --- Modal & Gemini API Integration ---
+        const modal = document.getElementById('modal');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const closeModalButton = document.getElementById('closeModal');
+        const modalText = document.getElementById('modalText');
+
+        closeModalButton.addEventListener('click', closeModal);
+        modalOverlay.addEventListener('click', closeModal);
+
+        function openModal() {
+            modal.style.display = 'block';
+            modalOverlay.style.display = 'block';
+            isGamePaused = true;
+        }
+
+        function closeModal() {
+            modal.style.display = 'none';
+            modalOverlay.style.display = 'none';
+            isGamePaused = false;
+        }
+
+        // Feature 1: Pep Talk
+        const pepTalkButton = document.getElementById('pepTalkButton');
+        pepTalkButton.addEventListener('click', getPepTalk);
+
+        async function getPepTalk() {
+            openModal();
+            modalText.textContent = 'Loading your pep talk...';
+            const opponent = gameMode === 'vsAI' ? computer.name : 'your friend';
+            const prompt = `Give me a short, witty, and encouraging pep talk for someone playing a game of Pong against ${opponent}. The current score is Player 1: ${player.score}, Opponent: ${computer.score}. Keep it under 50 words.`;
+
+            try {
+                let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    modalText.textContent = result.candidates[0].content.parts[0].text;
+                } else {
+                    modalText.textContent = 'Could not get a pep talk. Just keep playing, you got this!';
+                }
+            } catch (error) {
+                console.error('Error fetching pep talk:', error);
+                modalText.textContent = 'An error occurred. But don\'t let that stop you from winning!';
+            }
+        }
+
+        // Feature 2: Theme Customizer
+        const themeButton = document.getElementById('themeButton');
+        const themeInput = document.getElementById('themeInput');
+        themeButton.addEventListener('click', customizeTheme);
+
+        async function customizeTheme() {
+            const theme = themeInput.value.trim();
+            if (!theme) {
+                openModal();
+                modalText.textContent = "Please enter a theme first!";
+                return;
+            }
+            openModal();
+            modalText.textContent = `Generating a "${theme}" theme...`;
+
+            const prompt = `Create a color palette for a retro pong game with the theme "${theme}". Provide 5 colors as hex codes.`;
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    "pageBackground": { "type": "STRING" }, "gameBackground": { "type": "STRING" },
+                    "playerPaddle": { "type": "STRING" }, "computerPaddle": { "type": "STRING" },
+                    "ballAndNet": { "type": "STRING" }
+                },
+                required: ["pageBackground", "gameBackground", "playerPaddle", "computerPaddle", "ballAndNet"]
+            };
+
+            try {
+                const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: schema } };
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const result = await response.json();
+                
+                if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    const themeColors = JSON.parse(result.candidates[0].content.parts[0].text);
+                    applyTheme(themeColors);
+                    closeModal();
+                } else {
+                    modalText.textContent = 'Could not generate a theme. Please try another idea!';
+                }
+            } catch (error) {
+                console.error('Error generating theme:', error);
+                modalText.textContent = 'Failed to create a theme. The AI might be stumped!';
+            }
+        }
+
+        function applyTheme(themeColors) {
+            document.body.style.backgroundColor = themeColors.pageBackground;
+            canvas.style.backgroundColor = themeColors.gameBackground;
+            colors.canvasBg = themeColors.gameBackground;
+            player.color = themeColors.playerPaddle;
+            computer.color = themeColors.computerPaddle;
+            ball.color = themeColors.ballAndNet;
+            colors.net = themeColors.ballAndNet;
+        }
+
+        // Feature 3: AI Personality
+        const aiPersonalityButton = document.getElementById('aiPersonalityButton');
+        const aiPersonalityInput = document.getElementById('aiPersonalityInput');
+        aiPersonalityButton.addEventListener('click', setAiPersonality);
+
+        async function setAiPersonality() {
+            const personality = aiPersonalityInput.value.trim();
+            if (!personality) {
+                openModal();
+                modalText.textContent = "Please enter a personality first!";
+                return;
+            }
+            openModal();
+            modalText.textContent = `Crafting a "${personality}" opponent...`;
+
+            const prompt = `Generate an AI personality for a Pong opponent described as "${personality}".`;
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    "name": { "type": "STRING", "description": "A creative, funny name for the opponent based on the personality." },
+                    "level": { "type": "NUMBER", "description": "A number between 0.03 (very easy) and 0.2 (very hard) representing the AI's reaction speed." },
+                    "errorMargin": { "type": "NUMBER", "description": "A number between 0 (perfect) and 100 (very clumsy) representing how much random error the AI has." }
+                },
+                required: ["name", "level", "errorMargin"]
+            };
+
+            try {
+                const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: schema } };
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const result = await response.json();
+
+                if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    const aiProfile = JSON.parse(result.candidates[0].content.parts[0].text);
+                    computer.name = aiProfile.name;
+                    computer.level = aiProfile.level;
+                    computer.errorMargin = aiProfile.errorMargin;
+                    modalText.textContent = `Your new opponent is: ${computer.name}! Good luck.`;
+                } else {
+                    modalText.textContent = 'Could not create that personality. Try being more descriptive!';
+                }
+            } catch (error) {
+                console.error('Error generating AI personality:', error);
+                modalText.textContent = 'Failed to create that opponent. The AI is on a break!';
+            }
+        }
+
+        // --- Initialize and Run Game ---
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            initializeGameObjects();
+        });
+
+        // Initial setup
+        resizeCanvas();
+        initializeGameObjects();
+        
+        // Start the game loop
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
